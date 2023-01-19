@@ -55,18 +55,20 @@ use std::io;
 ///
 /// The invariant rules that come for this are:
 ///
+/// ```text
 ///     0 <= position <= limit <= len       (1)
 ///     0 <= available         <= len       (2)
 ///     0 <= free              <= len       (3)
 ///     is_empty  ===  available == 0       (4)
 ///     is_full   ===  free == 0            (5)
+/// ```
 ///
 /// Note that both offsets point to "the next available" spot, and can both reach `len`.
 /// These details, however, are exactly the abstraction value of this type, and a user would never
 /// have to keep in mind.
 ///
 /// A buffer generally operates by wrapping a `D` that is `AsRef<[u8]>` and/or `AsMut<[u8]>`.
-/// This requirement is not imposed on creation, but operations (associated methods) will be
+/// This requirement is not imposed on creation, but operations (associated functions) will be
 /// enabled gradually when these requirements are met.
 ///
 /// As the name denotes, the `Buffer` concept is lend from JVM's [`java.nio.ByteBuffer`]. For
@@ -83,6 +85,8 @@ use std::io;
 /// (owned or any-way-borrowed).
 ///
 /// ```rust
+/// use bio::Buffer;
+///
 /// const N: usize = 11;
 ///
 /// fn impl_as_ref_u8() -> impl AsRef<[u8]> {
@@ -100,9 +104,9 @@ use std::io;
 /// let buf3 = Buffer::new(store2);      // owned, will enable all operations
 ///
 /// // Buffers ready
-/// for buffer in [buffer0, buffer1, buffer2] {
-///     assert_eq!(buffer.available(), N);
-/// }
+/// assert_eq!(buf1.free(), N);
+/// assert_eq!(buf2.free(), N);
+/// assert_eq!(buf3.free(), N);
 /// ```
 ///
 /// ## Including in other types
@@ -113,11 +117,14 @@ use std::io;
 /// - use [`OwnedBuffer`] or write it yourself as `Buffer<Vec<u8>>`.
 ///
 /// ```rust
+/// use bio::Buffer;
+/// use bio::OwnedBuffer;
+///
 /// // Reading over a read-only buffer:
 /// struct ReadingSlowly<'a>(pub Buffer<&'a str>);
 ///
 /// // Own it completely:
-/// struct MyByteBuffer(OwnedByteBuffer);
+/// struct MyByteBuffer(OwnedBuffer);
 ///
 /// // Or own it yourself:
 /// struct MyString(Buffer<String>);
@@ -131,11 +138,11 @@ use std::io;
 ///
 /// The main point and usage of the `Buffer` is to read from and write to I/O streams.
 ///
-/// `Buffer` provides the [`Self::read()`] and [`Self::write()`] methods, which accept an I/O object
-/// and delegate the reading/writing to that. What `Buffer` takes care of is passing the appropriate
-/// part of the backing slice to I/O. This is most handy when there are multiple, possibly
-/// multiplexed, I/O operations, which are incomplete. Using the buffer contract there is no
-/// book-keeping that needs to happen from the user.
+/// `Buffer` provides the [`Self::read()`] and [`Self::write()`] functions, which accept an I/O
+/// object and delegate the reading/writing to that. What `Buffer` takes care of is passing the
+/// appropriate part of the backing slice to I/O. This is most handy when there are multiple,
+/// possibly multiplexed, I/O operations, which are incomplete. Using the buffer contract there
+/// is no book-keeping that needs to happen from the user.
 ///
 /// ### Reading
 ///
@@ -144,11 +151,15 @@ use std::io;
 /// full, but it will consistently read 0 extra bytes, so care should be taken.
 ///
 /// ```rust
-/// let mut buffer = Buffer::new([0u8; 128]);
-/// let mut source = &[0, 1, 2];
+/// # fn main() -> std::io::Result<()> { use bio::Buffer;
+///
+/// let mut buffer = Buffer::new([0u8; 3]);
+/// let mut source = [0u8, 1, 2].as_ref();
 /// buffer.read(&mut source)?;
 ///
-/// assert_eq!(buffer.into_inner(), [0, 1, 2]);
+/// assert_eq!(buffer.to_inner(), [0, 1, 2]);
+///
+/// # Ok (()) }
 /// ```
 ///
 /// ### Writing
@@ -158,11 +169,14 @@ use std::io;
 /// is empty, but it will consistently write 0 extra bytes, so care should be taken.
 ///
 /// ```rust
-/// let mut buffer = Buffer::new([0u8, 1, 2]);
+/// # fn main() -> std::io::Result<()> { use bio::Buffer;
+///
+/// let mut buffer = Buffer::source([0u8, 1, 2]);
 /// let mut dest = [0u8; 5];
-/// buffer.write(&mut dest)?;
+/// buffer.write(&mut dest.as_mut())?;
 ///
 /// assert_eq!(dest, [0, 1, 2, 0, 0]);
+/// # Ok (()) }
 /// ```
 ///
 /// ### Between writes and reads
@@ -182,16 +196,18 @@ use std::io;
 /// This is a very cheap operation, as it can happen with [`slice::copy_within()`] of byte slices.
 ///
 /// ```rust
+/// # fn main() -> std::io::Result<()> { use bio::Buffer;
+///
 /// let mut buffer = Buffer::new([0u8; 2]);
-/// let mut source = &[1, 2, 3, 4];
-/// let mut dest_store = [0u8; 3];
+/// let mut source: &[u8] = &[1u8, 2, 3, 4];
+/// let mut dest = [0u8; 3];
 ///
 /// // Read 2 bytes (buffer capacity) from source
-/// buffer.read(&mut source)?;
+/// buffer.read(source)?;
 /// assert!(buffer.is_full());
 ///
 /// // Write 2 bytes (buffer contents) to dest
-/// buffer.write(&mut dest)?;
+/// buffer.write(dest.as_mut())?;
 /// assert!(buffer.is_empty());
 ///
 /// // Now dest contains the first two bytes of source
@@ -199,7 +215,7 @@ use std::io;
 ///
 /// // Further reading or writing from the buffer is a no-op
 /// // because position and limit are maxed out
-/// buffer.read(&mut source[2..])?;
+/// buffer.read(&source[2..])?;
 /// buffer.write(&mut dest[2..])?;
 /// // Destination still lacks the final byte
 /// assert_eq!(dest, [1, 2, 0]);
@@ -209,10 +225,11 @@ use std::io;
 ///
 /// // Solution: compact the buffer
 /// buffer.compact();
-/// buffer.read(&mut source[2..])?;
+/// buffer.read(&source[2..])?;
 /// buffer.write(&mut dest[2..])?;
 /// // Destination now contains all source bytes
 /// assert_eq!(dest, [1, 2, 3]);
+/// # Ok (()) }
 /// ```
 ///
 /// ## Using the buffer as an I/O object
@@ -220,11 +237,21 @@ use std::io;
 /// Since `Buffer` wraps `[u8]` values, and references to those implement the I/O traits,
 /// the buffer itself implements I/O as well.
 ///
-/// The above example can be made more easy by using only buffers:
+/// The default `Self::new()` constructor creates a buffer that is initially empty, and is
+/// better suited as a destination buffer (at least at first, until it has data written into it,
+/// which can be later read).
+///
+/// The `Self::source()` constructor creates a buffer that is initially configured directly
+/// for reading the data of the backing storage. In other words, makes the whole storage range
+/// `Self::available()`.
+///
+/// The earlier example can be made more easy by using only buffers:
 ///
 /// ```rust
+/// # fn main() -> std::io::Result<()> { use bio::Buffer;
+///
 /// let mut buffer = Buffer::new([0u8; 2]);
-/// let mut source = Buffer:new([1u8, 2, 3, 4]);
+/// let mut source = Buffer::source([1u8, 2, 3, 4]);
 /// let mut dest = Buffer::new([0u8; 3]);
 ///
 /// // Now it's just too easy
@@ -232,14 +259,15 @@ use std::io;
 /// buffer.write(&mut dest)?;
 ///
 /// // Buffer capacity was 2, so only 2 source bytes in dest:
-/// assert_eq!(&dest, &[1, 2]); // Buffer as slice, see below section.
+/// assert_eq!(dest.as_read(), &[1, 2]); // Buffer as slice, see below section.
 ///
 /// buffer.compact();
 /// buffer.read(&mut source)?;  // source buffer keeps track where we're reading from
 /// buffer.write(&mut dest)?;   // dest buffer keeps track of where we're writing to
 ///
 /// // Now we're done
-/// assert_eq!(buffer.into_inner(), [1u8, 2, 3]);
+/// assert_eq!(dest.to_inner(), [1u8, 2, 3]);
+/// # Ok (()) }
 /// ```
 ///
 /// ## I/O transfusion
@@ -247,22 +275,26 @@ use std::io;
 /// If you have made it thus far, you have undoubtedly noted an emerging pattern for moving data
 /// from an input to an output.
 ///
-/// Buffer provides the [`Self::transfuse()`] method, for repeatedly calling the
+/// Buffer provides the [`Self::transfuse()`] function, for repeatedly calling the
 /// [`Self::read()`], [`Self::write()`], [`Self::compact()`] cycle.
 ///
-/// Note that `transfuse` will stop only when the input source signals that it has reached
-/// end-of-stream. There is no way to short-cut this operation.
+/// Note that `transfuse` will stop only when no more bytes can be moved.
+/// There is no way to short-cut this operation. For more sophisticated transfusions, one
+/// should write their own utility.
 ///
-/// For more sophisticated transfusions, one should write their own utility.
+/// Make sure to check the function's documentation for how the I/O objects are affected.
 ///
 /// ```rust
-/// let mut source = Buffer::new([1u8, 2, 3]);
+/// # fn main() -> std::io::Result<()> { use bio::Buffer;
+/// let mut source = Buffer::source([1u8, 2, 3]);
 /// let mut dest = Buffer::new([0u8; 2]);
 /// let mut buffer = Buffer::new([0u8]); // 1 byte buffer!
 ///
-/// buffer.transfuse(source, &mut dest)?;
+/// let transfused = buffer.transfuse(source, &mut dest)?;
 ///
-/// assert_eq!(&dest, [1, 2]);
+/// assert_eq!(transfused, 2);          // only 2 bytes fit in destination
+/// assert_eq!(dest.as_read(), [1, 2]);
+/// # Ok (()) }
 /// ```
 ///
 /// ## Borrow the buffer as slices
@@ -274,33 +306,48 @@ use std::io;
 /// after having an indiscreet peek inside. Therefore, these are provided in a
 /// *use-at-your-own-risk* fashion.
 ///
-/// The [`available(&Self)`] area, which are bytes to be read from, is used when this buffer
-/// is used as an `AsRef<[u8]>`.
+/// The [`Self::available()`] area, which are bytes to be read from, is returned from
+/// [`Self::as_read()`].
 ///
-/// The [`free(&Self)`] area, which are bytes to be written to, is used when this buffer is used
-/// as an `AsMut<[u8]>`.
+/// The [`Self::free()`] area, which are bytes to be written to, is returned from
+/// [`Self::as_write()`].
 ///
 /// ```rust
+/// # fn main() -> std::io::Result<()> {
+/// use bio::Buffer;
+///
 /// let mut buffer = Buffer::new([0u8; 3]);
 ///
 /// // Initially, available is 0
-/// assert_eq!(&buffer, &[]);
+/// assert_eq!(buffer.as_read(), &[]);
 /// // ... but free is everything
-/// assert_eq!(&mut buffer, &mut [0, 0, 0]);
+/// assert_eq!(buffer.as_write(), &mut [0, 0, 0]);
 ///
-/// buffer.write(&[1, 2])?;
+/// buffer.read([1u8, 2].as_ref())?;
 /// // Now there are 2 bytes to be read from
-/// assert_eq!(&buffer, &[1, 2]);
+/// assert_eq!(buffer.as_read(), &[1, 2]);
 /// // ... and one to be written to
-/// assert_eq!(&mut buffer, &mut [0]);
+/// assert_eq!(buffer.as_write(), &mut [0]);
+/// # Ok (()) }
 /// ```
+///
+/// ## Buffer traits
+///
+/// Buffer implements [`AsRef`] and [`AsMut`] to a slice type `[T]`, when the backing storage
+/// `D` implements those traits.
+///
+/// Buffer also implements [`io::Read`] and [`io::Write`], by reading/writing from its
+/// [`Self::as_read()`] and [`Self::as_write()`] areas.
 ///
 /// ## Buffers within buffers
 ///
 /// It should be clear by now that buffers can be the backing storage of buffer. Bufferception.
 ///
 /// ```rust
+/// use bio::Buffer;
+///
 /// let mut buffer = Buffer::new(Buffer::new(Buffer::new(Buffer::new(vec![0u8; 1]))));
+/// let mut buffer = Buffer::new(Buffer::new(vec![0u8; 1]));
 /// assert_eq!(buffer.available(), 0);
 /// assert_eq!(buffer.free(), 1);
 /// ```
@@ -319,31 +366,301 @@ use std::io;
 /// ---
 /// [`sio`]: /crate/sio.html
 ///
-pub struct Buffer<D>(D, usize, usize);
+pub struct Buffer<D> {
+    position: usize,
+    limit: usize,
+    store: D,
+}
 
 pub type OwnedBuffer = Buffer<Vec<u8>>;
 
-impl <D: AsRef<[u8]>> Buffer<D> {
-    pub fn new(store: D) -> Self
-    {
-        Self(store, 0, store.as_ref().len())
+impl<D: AsRef<[u8]>> Buffer<D> {
+    /// Create a new empty Buffer.
+    pub fn new(store: D) -> Self {
+        Self {
+            position: 0,
+            limit: 0,
+            store,
+        }
     }
 
-    fn len(&self) -> usize { self.0.as_ref().len() }
+    /// Create a new Buffer, which is configured for reading.
+    ///
+    /// The buffer will have an available space that contains the whole storage
+    /// provided.
+    ///
+    /// This is useful for creating source buffers, which can be used as `io::Read` sources.
+    ///
+    /// # Example
+    /// ```rust
+    /// # fn main() -> std::io::Result<()> { use bio::Buffer;
+    /// let mut src = Buffer::source([0u8, 1, 2]);
+    /// let mut dst = Buffer::new([0u8; 3]);
+    ///
+    /// dst.read(src)?;
+    ///
+    /// assert_eq!(dst.to_inner(), [0, 1, 2]);
+    /// # Ok(()) }
+    /// ```
+    pub fn source(store: D) -> Self {
+        Self {
+            position: 0,
+            limit: store.as_ref().len(),
+            store,
+        }
+    }
 
-    pub fn position(&self) -> usize { self.1 }
-    pub fn limit(&self) -> usize { self.2 }
-    pub fn available(&self) -> usize { self.limit() - self.position() }
-    pub fn free(&self) -> usize { self.len() - self.position() }
-    pub fn is_empty(&self) -> bool { self.available() == 0 }
-    pub fn is_full(&self) -> bool { self.free() == 0 }
+    /// Return the `position` offset.
+    pub fn position(&self) -> usize {
+        self.position
+    }
 
-    pub fn compact(&self) { todo!() }
+    /// Return the `limit` offset.
+    pub fn limit(&self) -> usize {
+        self.limit
+    }
 
-    pub fn read(&mut self, source: impl io::Read) -> io::Result<usize> { todo!() }
-    pub fn write(&mut self, sink: impl io::Write) -> io::Result<usize> { todo!() }
+    /// Return `store`'s `slice::len()`.
+    pub fn len(&self) -> usize {
+        self.store.as_ref().len()
+    }
 
-    pub fn to_inner(self) -> D { self.0 }
+    /// Consume the buffer and return the backing `store`.
+    pub fn to_inner(self) -> D {
+        self.store
+    }
 
-    pub fn transfuse(&mut self, source: impl io::Read, sink: impl io::Write) -> io::Result<usize> { todo!() }
+    /// Return the available space for `Self::read()`.
+    ///
+    /// This is `Self::limit()` - `Self::position()`.
+    pub fn available(&self) -> usize {
+        self.limit() - self.position()
+    }
+
+    /// Return the free space for `Self::write()`.
+    ///
+    /// This is `Self::len()` - `Self::limit()`.
+    pub fn free(&self) -> usize {
+        self.len() - self.limit()
+    }
+
+    /// Return whether the buffer is empty.
+    ///
+    /// This is `Self::available()`` == 0`.
+    pub fn is_empty(&self) -> bool {
+        self.available() == 0
+    }
+
+    /// Return whether the buffer is full.
+    ///
+    /// This is `Self::free()`` == 0`.
+    pub fn is_full(&self) -> bool {
+        self.free() == 0
+    }
+
+    /// Compact the buffer.
+    ///
+    /// Internally, this will move the available and free areas
+    /// so that they start from the beginning of the backing storage.
+    ///
+    /// It is implemented through `slice::copy_within()` and therefore
+    /// the time complexity is `O(n)` for the buffer's `Self::len()`.
+    ///
+    /// # Example
+    /// ```rust
+    /// # fn main() -> std::io::Result<()> { use bio::Buffer;
+    /// let mut buf = Buffer::new([0u8; 5]);
+    ///
+    /// // Write up to 4
+    /// buf.read([1u8, 2, 3, 4].as_ref())?;
+    ///
+    /// // Read up to 2
+    /// buf.write([0u8; 2].as_mut())?;
+    ///
+    /// // Now position is at 2 and limit at 4
+    /// assert_eq!(buf.position(), 2);
+    /// assert_eq!(buf.limit(), 4);
+    ///
+    /// // After compacting, these offsets are translated from 0
+    /// buf.compact();
+    /// assert_eq!(buf.position(), 0);
+    /// assert_eq!(buf.limit(), 2);
+    /// # Ok(()) }
+    pub fn compact<T>(&mut self)
+    where
+        D: AsMut<[T]>,
+        T: Copy,
+    {
+        let Self {
+            position,
+            limit,
+            store,
+        } = self;
+
+        let store = store.as_mut();
+
+        let available = *position..*limit;
+        store.copy_within(available, 0);
+
+        *limit -= *position;
+        *position = 0;
+    }
+
+    /// Read bytes from a source into the buffer's free area.
+    ///
+    /// This will advance the `Self::limit()` pointer, reducing this way
+    /// the free area.
+    ///
+    /// Returns the number of bytes read.
+    pub fn read(&mut self, mut source: impl io::Read) -> io::Result<usize>
+    where
+        D: AsMut<[u8]>,
+    {
+        source.read(self.as_write()).map(|n| {
+            self.limit += n;
+            n
+        })
+    }
+
+    /// Write bytes to a sink into from the buffer's available area.
+    ///
+    /// This will advance the `Self::position()` pointer, reducing this way
+    /// the available area.
+    ///
+    /// Returns the number of bytes written.
+    pub fn write(&mut self, mut sink: impl io::Write) -> io::Result<usize> {
+        sink.write(self.as_read()).map(|n| {
+            self.position += n;
+            n
+        })
+    }
+
+    /// Completely copy a source to a sink.
+    ///
+    /// This function will repeatedly read from the source and write to
+    /// the sink, `Self::compact()`ing in-between.
+    ///
+    /// # Method of transfusion
+    ///
+    /// Transfusion happens in cycles. On each cycle the buffer is
+    /// - `Self::compact()`ed
+    /// - `Self::read()`ed into
+    /// - `Self::write()`en from
+    ///
+    /// This cycle goes on until both `read` and `write` give back a zero number of bytes
+    /// moved. This implies that a stale-mate situation has arisen, either by fact of source
+    /// reaching end-of-stream, or that both sink and buffer are "full" and nothing
+    /// more can happen (back-pressure).
+    ///
+    /// # WARNING
+    ///
+    /// In case of a stale-mate (sink full), the contents of the input stream that are still in
+    /// the buffer will be lost after the buffer is dropped!
+    ///
+    /// However, this scenario should only arise with finite capacity sinks (such as static length
+    /// arrays).
+    ///
+    /// # Return value
+    ///
+    /// Returns the total number of bytes transfused.
+    pub fn transfuse(&mut self, source: impl io::Read, sink: impl io::Write) -> io::Result<usize>
+    where
+        D: AsMut<[u8]>,
+    {
+        transfuse(0, self, source, sink)
+    }
+
+    /// Return the free area of the buffers backing store as a slice.
+    pub fn as_write(&mut self) -> &mut [u8]
+    where
+        D: AsMut<[u8]>,
+    {
+        let Self { limit, store, .. } = self;
+        &mut store.as_mut()[*limit..]
+    }
+
+    /// Return the available area of the buffer's backing store as a slice.
+    pub fn as_read(&self) -> &[u8] {
+        let Self {
+            position,
+            limit,
+            store,
+            ..
+        } = self;
+        &store.as_ref()[*position..*limit]
+    }
+}
+
+/// Return the backing storage as a mutable slice.
+impl<D, T> AsMut<[T]> for Buffer<D>
+where
+    D: AsMut<[T]>,
+{
+    fn as_mut(&mut self) -> &mut [T] {
+        self.store.as_mut()
+    }
+}
+
+/// Return the backing storage as a slice.
+impl<D, T> AsRef<[T]> for Buffer<D>
+where
+    D: AsRef<[T]>,
+{
+    fn as_ref(&self) -> &[T] {
+        &self.store.as_ref()
+    }
+}
+
+/// A Buffer can be also seen `io::Read`, reading from and reducing its available area.
+impl<D> io::Read for Buffer<D>
+where
+    D: AsRef<[u8]> + AsMut<[u8]>,
+{
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        self.write(buf)
+    }
+}
+
+/// A Buffer can be also seen `io::Write`, writing to and reducing its free area.
+impl<D> io::Write for Buffer<D>
+where
+    D: AsRef<[u8]> + AsMut<[u8]>,
+{
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        self.read(buf)
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        Ok(())
+    }
+}
+
+fn transfuse<D>(
+    total: usize,
+    buffer: &mut Buffer<D>,
+    mut source: impl io::Read,
+    mut sink: impl io::Write,
+) -> io::Result<usize>
+where
+    D: AsRef<[u8]> + AsMut<[u8]>,
+{
+    buffer.compact();
+
+    // These are cheap enough to use directly.
+    // Checking separately for is_empty()/is_full() would be an overhead.
+    //
+    // TODO: optimise transfuse
+    // What can be improved is not hitting the source at all, once it has
+    // returned 0.
+    let read = buffer.read(&mut source)?;
+    let written = buffer.write(&mut sink)?;
+
+    match (read, written) {
+        (0, 0) => Ok(total),
+
+        // Count bytes on the out-stream.
+        //
+        // This SHOULD BE a tail-recursion.
+        (_, n) => transfuse(total + n, buffer, source, sink),
+    }
 }
