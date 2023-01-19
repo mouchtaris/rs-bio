@@ -10,6 +10,8 @@
 //! extra pair of pointers.
 //!
 
+use std::io;
+
 /// A managed byte-slice that keeps track of written and read areas.
 ///
 /// A `Buffer` is essentially a byte slice with 2 extra pointers (expressed as indices):
@@ -27,7 +29,7 @@
 /// - `free` is the number of *free-to-write* bytes, defined as the difference between the length
 ///    of the backing slice and `limit`.
 ///
-/// As a convenience [`is_empty()`] means `available() == 0` and [`is_full()`] means
+/// As a convenience [`Self::is_empty()`] means `available() == 0` and [`Self::is_full()`] means
 /// `free() == 0`.
 ///
 /// In a schematic form:
@@ -77,7 +79,7 @@
 ///
 /// ## Creating a `Buffer`
 ///
-/// Creating a buffer happens through [`new`], which accepts a backing storage in any form
+/// Creating a buffer happens through [`Self::new()`], which accepts a backing storage in any form
 /// (owned or any-way-borrowed).
 ///
 /// ```rust
@@ -108,7 +110,7 @@
 /// If you need to include a buffer in another type, you have two choices:
 ///
 /// - propagate the type variable `D` to your type's type parameters, or
-/// - use [`OwnedByteBuffer`] or write it yourself as `Buffer<Vec<u8>>`.
+/// - use [`OwnedBuffer`] or write it yourself as `Buffer<Vec<u8>>`.
 ///
 /// ```rust
 /// // Reading over a read-only buffer:
@@ -123,13 +125,13 @@
 ///
 /// ## Reclaiming backing storage
 ///
-/// You can at any point lose the buffer and get back `D` by calling [`to_inner()`]:
+/// You can at any point lose the buffer and get back `D` by calling [`Self::to_inner()`]:
 ///
 /// ## Performing I/O
 ///
 /// The main point and usage of the `Buffer` is to read from and write to I/O streams.
 ///
-/// `Buffer` provides the [`read()`] and [`write()`] methods, which accept an I/O object
+/// `Buffer` provides the [`Self::read()`] and [`Self::write()`] methods, which accept an I/O object
 /// and delegate the reading/writing to that. What `Buffer` takes care of is passing the appropriate
 /// part of the backing slice to I/O. This is most handy when there are multiple, possibly
 /// multiplexed, I/O operations, which are incomplete. Using the buffer contract there is no
@@ -138,8 +140,8 @@
 /// ### Reading
 ///
 /// You can *read-into* the buffer from any [`io::Read`] object. This operation can be called
-/// repeatedly, until the buffer [`is_full()`]. It can still be called when the buffer is full,
-/// but it will consistently read 0 extra bytes, so care should be taken.
+/// repeatedly, until the buffer [`Self::is_full()`]. It can still be called when the buffer iso
+/// full, but it will consistently read 0 extra bytes, so care should be taken.
 ///
 /// ```rust
 /// let mut buffer = Buffer::new([0u8; 128]);
@@ -152,8 +154,8 @@
 /// ### Writing
 ///
 /// You can *write-from* the buffer to any [`io::Write`] object. This operation can be called
-/// repeatedly, until the buffer [`is_empty()`]. It can still be called when the buffer is empty,
-/// but it will consistently write 0 extra bytes, so care should be taken.
+/// repeatedly, until the buffer [`Self::is_empty()`]. It can still be called when the buffer
+/// is empty, but it will consistently write 0 extra bytes, so care should be taken.
 ///
 /// ```rust
 /// let mut buffer = Buffer::new([0u8, 1, 2]);
@@ -166,18 +168,18 @@
 /// ### Between writes and reads
 ///
 /// If you are interleaving reads and writes, `position` and `limit` are progressively moving
-/// toward the `len` of the backing slice. This causes the [`free()`] space to gradually be less
-/// and less, down to `0`. Eventually, every read and write will be no-op, because
+/// toward the `len` of the backing slice. This causes the [`Self::free()`] space to gradually be
+/// less and less, down to `0`. Eventually, every read and write will be no-op, because
 /// ```text
 ///     position == limit == len   =>
 ///     available == free == 0
 /// ```
 ///
 /// In order to avoid this situation, and to keep the buffer space maximally utilized at all times,
-/// between I/Os one should call [`compact()`], which will copy internally all areas of the buffer
-/// back over the completely consumed areas of it (`0..position`).
+/// between I/Os one should call [`Self::compact()`], which will copy internally all areas of the
+/// buffer back over the completely consumed areas of it (`0..position`).
 ///
-/// This is a very cheap operation, as it can happen with [`copy_within()`] of byte slices.
+/// This is a very cheap operation, as it can happen with [`slice::copy_within()`] of byte slices.
 ///
 /// ```rust
 /// let mut buffer = Buffer::new([0u8; 2]);
@@ -245,8 +247,8 @@
 /// If you have made it thus far, you have undoubtedly noted an emerging pattern for moving data
 /// from an input to an output.
 ///
-/// Buffer provides the [`transfuse()`] method, for repeatedly calling the [`read()`], [`write()`],
-/// [`compact()`] cycle.
+/// Buffer provides the [`Self::transfuse()`] method, for repeatedly calling the
+/// [`Self::read()`], [`Self::write()`], [`Self::compact()`] cycle.
 ///
 /// Note that `transfuse` will stop only when the input source signals that it has reached
 /// end-of-stream. There is no way to short-cut this operation.
@@ -272,11 +274,11 @@
 /// after having an indiscreet peek inside. Therefore, these are provided in a
 /// *use-at-your-own-risk* fashion.
 ///
-/// The [`available()`] area, which are bytes to be read from, is used when this buffer
+/// The [`available(&Self)`] area, which are bytes to be read from, is used when this buffer
 /// is used as an `AsRef<[u8]>`.
 ///
-/// The [`free()`] area, which are bytes to be written to, is used when this buffer is used as an
-/// `AsMut<[u8]>`.
+/// The [`free(&Self)`] area, which are bytes to be written to, is used when this buffer is used
+/// as an `AsMut<[u8]>`.
 ///
 /// ```rust
 /// let mut buffer = Buffer::new([0u8; 3]);
@@ -314,4 +316,34 @@
 ///
 /// Thank you for reading. Enjoy `Buffer`!
 ///
-pub struct Buffer<D>(D, usize, usize, usize, usize);
+/// ---
+/// [`sio`]: /crate/sio.html
+///
+pub struct Buffer<D>(D, usize, usize);
+
+pub type OwnedBuffer = Buffer<Vec<u8>>;
+
+impl <D: AsRef<[u8]>> Buffer<D> {
+    pub fn new(store: D) -> Self
+    {
+        Self(store, 0, store.as_ref().len())
+    }
+
+    fn len(&self) -> usize { self.0.as_ref().len() }
+
+    pub fn position(&self) -> usize { self.1 }
+    pub fn limit(&self) -> usize { self.2 }
+    pub fn available(&self) -> usize { self.limit() - self.position() }
+    pub fn free(&self) -> usize { self.len() - self.position() }
+    pub fn is_empty(&self) -> bool { self.available() == 0 }
+    pub fn is_full(&self) -> bool { self.free() == 0 }
+
+    pub fn compact(&self) { todo!() }
+
+    pub fn read(&mut self, source: impl io::Read) -> io::Result<usize> { todo!() }
+    pub fn write(&mut self, sink: impl io::Write) -> io::Result<usize> { todo!() }
+
+    pub fn to_inner(self) -> D { self.0 }
+
+    pub fn transfuse(&mut self, source: impl io::Read, sink: impl io::Write) -> io::Result<usize> { todo!() }
+}
