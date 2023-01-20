@@ -191,11 +191,11 @@ let mut source: &[u8] = &[1u8, 2, 3, 4];
 let mut dest = [0u8; 3];
 
 // Read 2 bytes (buffer capacity) from source
-buffer.read(source)?;
+buffer.read(&mut source)?;
 assert!(buffer.is_full());
 
 // Write 2 bytes (buffer contents) to dest
-buffer.write(dest.as_mut())?;
+buffer.write(&mut dest.as_mut())?;
 assert!(buffer.is_empty());
 
 // Now dest contains the first two bytes of source
@@ -203,20 +203,21 @@ assert_eq!(dest, [1, 2, 0]);
 
 // Further reading or writing from the buffer is a no-op
 // because position and limit are maxed out
-buffer.read(&source[2..])?;
-buffer.write(&mut dest[2..])?;
+buffer.read(&mut source)?;
+buffer.write(&mut &mut dest[2..])?;
 // Destination still lacks the final byte
 assert_eq!(dest, [1, 2, 0]);
 
-// NOTE manual book-keeping, in updating the source and dest slices!
-// That's exactly what we have the buffer for. See next section, also.
-
 // Solution: compact the buffer
 buffer.compact();
-buffer.read(&source[2..])?;
-buffer.write(&mut dest[2..])?;
+buffer.read(&mut source)?;
+buffer.write(&mut &mut dest[2..])?;
 // Destination now contains all source bytes
 assert_eq!(dest, [1, 2, 3]);
+   
+// NOTE the manual book-keeping for the dest slice!
+// That's exactly what we have the buffer for. See next section, also.
+
 # Ok (()) }
 ```
 
@@ -248,14 +249,14 @@ buffer.read(&mut source)?;
 buffer.write(&mut dest)?;
 
 // Buffer capacity was 2, so only 2 source bytes in dest:
-assert_eq!(dest.as_read(), &[1, 2]); // Buffer as slice, see below section.
+assert_eq!(dest.as_read(), [1, 2]); // Buffer as slice, see below section.
 
 buffer.compact();
 buffer.read(&mut source)?;  // source buffer keeps track where we're reading from
 buffer.write(&mut dest)?;   // dest buffer keeps track of where we're writing to
 
 // Now we're done
-assert_eq!(dest.to_inner(), [1u8, 2, 3]);
+assert_eq!(dest.to_inner(), [1, 2, 3]);
 # Ok (()) }
 ```
 
@@ -280,7 +281,7 @@ let mut source = Buffer::source([1u8, 2, 3]);
 let mut dest = Buffer::new([0u8; 2]);
 let mut buffer = Buffer::new([0u8]); // 1 byte buffer!
 
-let transfused = buffer.transfuse(source, &mut dest)?;
+let transfused = buffer.transfuse(&mut source, &mut dest)?;
 
 assert_eq!(transfused, 2);          // only 2 bytes fit in destination
 assert_eq!(dest.as_read(), [1, 2]);
@@ -314,7 +315,7 @@ assert_eq!(buffer.as_read(), &[]);
 // ... but free is everything
 assert_eq!(buffer.as_write(), &mut [0, 0, 0]);
 
-buffer.read([1u8, 2].as_ref())?;
+buffer.read(&mut [1u8, 2].as_ref())?;
 // Now there are 2 bytes to be read from
 assert_eq!(buffer.as_read(), &[1, 2]);
 // ... and one to be written to

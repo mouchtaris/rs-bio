@@ -1,6 +1,8 @@
+use crate::stream::{Sink, Source};
 use std::io;
 
 #[doc = include_str!("../doc/Buffer.md")]
+#[derive(Default, Clone, Debug)]
 pub struct Buffer<D> {
     position: usize,
     limit: usize,
@@ -77,6 +79,19 @@ impl<D> Buffer<D> {
         self.free() == 0
     }
 
+    /// Clear the buffer, making it empty.
+    ///
+    /// This brings the buffer into the state it was after being created with [`Self::new()`].
+    ///
+    /// Note that this is different than the buffer being created with [`Self::source()`].
+    pub fn clear(&mut self) {
+        let Self {
+            position, limit, ..
+        } = self;
+        *position = 0;
+        *limit = 0;
+    }
+
     /// Create a new Buffer, which is configured for reading.
     ///
     /// The buffer will have an available space that contains the whole storage
@@ -90,7 +105,7 @@ impl<D> Buffer<D> {
     /// let mut src = Buffer::source([0u8, 1, 2]);
     /// let mut dst = Buffer::new([0u8; 3]);
     ///
-    /// dst.read(src)?;
+    /// dst.read(&mut src)?;
     ///
     /// assert_eq!(dst.to_inner(), [0, 1, 2]);
     /// # Ok(()) }
@@ -120,10 +135,10 @@ impl<D> Buffer<D> {
     /// let mut buf = Buffer::new([0u8; 5]);
     ///
     /// // Write up to 4
-    /// buf.read([1u8, 2, 3, 4].as_ref())?;
+    /// buf.read(&mut [1u8, 2, 3, 4].as_ref())?;
     ///
     /// // Read up to 2
-    /// buf.write([0u8; 2].as_mut())?;
+    /// buf.write(&mut [0u8; 2].as_mut())?;
     ///
     /// // Now position is at 2 and limit at 4
     /// assert_eq!(buf.position(), 2);
@@ -153,24 +168,12 @@ impl<D> Buffer<D> {
         *limit -= *position;
         *position = 0;
     }
-}
-
-impl<D: AsRef<[u8]>> Buffer<D> {
-    /// Write bytes to a sink into from the buffer's available area.
-    ///
-    /// This will advance the `Self::position()` pointer, reducing this way
-    /// the available area.
-    ///
-    /// Returns the number of bytes written.
-    pub fn write(&mut self, mut sink: impl io::Write) -> io::Result<usize> {
-        sink.write(self.as_read()).map(|n| {
-            self.position += n;
-            n
-        })
-    }
 
     /// Return the available area of the buffer's backing store as a slice.
-    pub fn as_read(&self) -> &[u8] {
+    pub fn as_read<T>(&self) -> &[T]
+    where
+        D: AsRef<[T]>,
+    {
         let Self {
             position,
             limit,
@@ -179,26 +182,48 @@ impl<D: AsRef<[u8]>> Buffer<D> {
         } = self;
         &store.as_ref()[*position..*limit]
     }
-}
 
-impl<D: AsMut<[u8]>> Buffer<D> {
-    /// Read bytes from a source into the buffer's free area.
+    /// Return the free area of the buffers backing store as a mutable slice.
+    pub fn as_write<T>(&mut self) -> &mut [T]
+    where
+        D: AsMut<[T]>,
+    {
+        let Self { limit, store, .. } = self;
+        &mut store.as_mut()[*limit..]
+    }
+
+    /// Write data to a sink into from the buffer's available area.
+    ///
+    /// This will advance the `Self::position()` pointer, reducing this way
+    /// the available area.
+    ///
+    /// Returns the number of bytes written.
+    pub fn write<T, S>(&mut self, sink: &mut S) -> io::Result<usize>
+    where
+        D: AsRef<[T]>,
+        S: Sink<T>,
+    {
+        sink.write(self.as_read()).map(|n| {
+            self.position += n;
+            n
+        })
+    }
+
+    /// Read data from a source into the buffer's free area.
     ///
     /// This will advance the `Self::limit()` pointer, reducing this way
     /// the free area.
     ///
     /// Returns the number of bytes read.
-    pub fn read(&mut self, mut source: impl io::Read) -> io::Result<usize> {
+    pub fn read<T, S>(&mut self, source: &mut S) -> io::Result<usize>
+    where
+        D: AsMut<[T]>,
+        S: Source<T>,
+    {
         source.read(self.as_write()).map(|n| {
             self.limit += n;
             n
         })
-    }
-
-    /// Return the free area of the buffers backing store as a slice.
-    pub fn as_write(&mut self) -> &mut [u8] {
-        let Self { limit, store, .. } = self;
-        &mut store.as_mut()[*limit..]
     }
 
     /// Completely copy a source to a sink.
@@ -213,7 +238,7 @@ impl<D: AsMut<[u8]>> Buffer<D> {
     /// - `Self::read()`ed into
     /// - `Self::write()`en from
     ///
-    /// This cycle goes on until both `read` and `write` give back a zero number of bytes
+    /// This cycle goes on until both `read` and `write` give back a zero number of items
     /// moved. This implies that a stale-mate situation has arisen, either by fact of source
     /// reaching end-of-stream, or that both sink and buffer are "full" and nothing
     /// more can happen (back-pressure).
@@ -229,9 +254,12 @@ impl<D: AsMut<[u8]>> Buffer<D> {
     /// # Return value
     ///
     /// Returns the total number of bytes transfused.
-    pub fn transfuse(&mut self, source: impl io::Read, sink: impl io::Write) -> io::Result<usize>
+    pub fn transfuse<T, S, K>(&mut self, source: &mut S, sink: &mut K) -> io::Result<usize>
     where
-        D: AsRef<[u8]>,
+        D: AsRef<[T]> + AsMut<[T]>,
+        T: Copy,
+        S: Source<T>,
+        K: Sink<T>,
     {
         transfuse(0, self, source, sink)
     }
@@ -262,8 +290,8 @@ impl<D> io::Read for Buffer<D>
 where
     D: AsRef<[u8]>,
 {
-    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-        self.write(buf)
+    fn read(&mut self, mut buf: &mut [u8]) -> io::Result<usize> {
+        self.write(&mut buf)
     }
 }
 
@@ -272,8 +300,8 @@ impl<D> io::Write for Buffer<D>
 where
     D: AsMut<[u8]>,
 {
-    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-        self.read(buf)
+    fn write(&mut self, mut buf: &[u8]) -> io::Result<usize> {
+        self.read(&mut buf)
     }
 
     fn flush(&mut self) -> io::Result<()> {
@@ -281,14 +309,17 @@ where
     }
 }
 
-fn transfuse<D>(
+fn transfuse<T, D, S, K>(
     total: usize,
     buffer: &mut Buffer<D>,
-    mut source: impl io::Read,
-    mut sink: impl io::Write,
+    source: &mut S,
+    sink: &mut K,
 ) -> io::Result<usize>
 where
-    D: AsRef<[u8]> + AsMut<[u8]>,
+    D: AsRef<[T]> + AsMut<[T]>,
+    T: Copy,
+    S: Source<T>,
+    K: Sink<T>,
 {
     buffer.compact();
 
@@ -298,8 +329,8 @@ where
     // TODO: optimise transfuse
     // What can be improved is not hitting the source at all, once it has
     // returned 0.
-    let read = buffer.read(&mut source)?;
-    let written = buffer.write(&mut sink)?;
+    let read = buffer.read(source)?;
+    let written = buffer.write(sink)?;
 
     match (read, written) {
         (0, 0) => Ok(total),
