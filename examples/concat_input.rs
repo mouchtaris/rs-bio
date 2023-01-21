@@ -1,3 +1,5 @@
+fn main() {}
+
 #[cfg(test)]
 use {
     bio::{
@@ -8,7 +10,7 @@ use {
 };
 
 #[test]
-fn test() -> IO<()> {
+fn example() -> IO<()> {
     // We are going to read a series of files to a destination Vec<u8>.
     // We'll double check that the number of bytes in the destination is
     // the sum of bytes if we loaded each file separately.
@@ -71,5 +73,3 @@ fn test() -> IO<()> {
 
     Ok(())
 }
-
-fn main() {}

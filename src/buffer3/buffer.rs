@@ -10,6 +10,18 @@ impl<D, T, C, P> Buffer<D, T, C, P> {
             _compact_strategy: PhantomData,
         }
     }
+
+    pub fn available(&self) -> usize {
+        self.span.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.available() == 0
+    }
+
+    pub fn clear(&mut self) {
+        self.span = 0..0;
+    }
 }
 
 impl<D, T> Buffer<D, T, SNone, SNone> {
@@ -44,6 +56,16 @@ where
     }
     pub fn write(&mut self, mut into: impl Sink<T>) -> IO {
         into.sink(self.as_read()).tap_ok(|n| self.span.start += n)
+    }
+
+    pub fn len(&self) -> usize {
+        self.data.as_ref().len()
+    }
+    pub fn free(&self) -> usize {
+        self.len() - self.span.end
+    }
+    pub fn is_full(&self) -> bool {
+        self.free() == 0
     }
 }
 

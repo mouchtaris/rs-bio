@@ -43,3 +43,13 @@ impl<S: io::Write> Sink<u8> for Write<S> {
         self.0.write(from)
     }
 }
+
+pub struct Delegate<F>(pub F);
+impl<F, T> Source<T> for Delegate<F>
+where
+    F: FnMut(&mut [T]) -> IO,
+{
+    fn source(&mut self, into: &mut [T]) -> IO {
+        self.0(into)
+    }
+}
