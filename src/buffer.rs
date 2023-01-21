@@ -1,12 +1,30 @@
-use crate::stream::{Sink, Source};
-use std::io;
+use {
+    crate::stream::{
+        Sink,
+        Source,
+    },
+    std::{
+        io,
+        ops::Range,
+    },
+};
 
 #[doc = include_str!("../doc/Buffer.md")]
-#[derive(Default, Clone, Debug)]
+#[derive(Clone)]
 pub struct Buffer<D> {
     position: usize,
     limit: usize,
     store: D,
+    compactor: Compactor<D>,
+}
+
+pub type Compactor<D> = fn(&mut D, Range<usize>, usize);
+
+pub fn shift_within<D: AsMut<[T]>, T>() -> Compactor<D> {
+    todo!()
+}
+
+pub fn copy_within<D: AsMut<[T]>, T: Copy>() -> Compactor<D> {
 }
 
 /// A Buffer backed by a `Vec<u8>`
@@ -14,11 +32,72 @@ pub type OwnedBuffer = Buffer<Vec<u8>>;
 
 impl<D> Buffer<D> {
     /// Create a new empty Buffer.
-    pub fn new(store: D) -> Self {
+    pub fn sink<T>(store: D) -> Self
+    where
+        D: AsMut<[T]>,
+        T: Copy,
+    {
         Self {
             position: 0,
             limit: 0,
             store,
+            compactor: copy_within(),
+        }
+    }
+
+    /// Create a new empty Buffer.
+    pub fn sink_move<T>(store: D) -> Self
+    where
+        D: AsMut<[T]>,
+    {
+        Self {
+            position: 0,
+            limit: 0,
+            store,
+            compactor: shift_within(),
+        }
+    }
+
+    /// Create a new Buffer, which is configured for reading.
+    ///
+    /// The buffer will have an available space that contains the whole storage
+    /// provided.
+    ///
+    /// This is useful for creating source buffers, which can be used as `io::Read` sources.
+    ///
+    /// # Example
+    /// ```rust
+    /// # fn main() -> std::io::Result<()> { use bio::Buffer;
+    /// let mut src = Buffer::source([0u8, 1, 2]);
+    /// let mut dst = Buffer::new([0u8; 3]);
+    ///
+    /// dst.read(&mut src)?;
+    ///
+    /// assert_eq!(dst.to_inner(), [0, 1, 2]);
+    /// # Ok(()) }
+    /// ```
+    pub fn source<T>(mut store: D) -> Self
+    where
+        D: AsMut<[T]>,
+        T: Copy,
+    {
+        Self {
+            position: 0,
+            limit: store.as_mut().len(),
+            store,
+            compactor: copy_within(),
+        }
+    }
+
+    pub fn source_move<T>(mut store: D) -> Self
+    where
+        D: AsMut<[T]>,
+    {
+        Self {
+            position: 0,
+            limit: store.as_mut().len(),
+            store,
+            compactor: shift_within(),
         }
     }
 
@@ -92,35 +171,6 @@ impl<D> Buffer<D> {
         *limit = 0;
     }
 
-    /// Create a new Buffer, which is configured for reading.
-    ///
-    /// The buffer will have an available space that contains the whole storage
-    /// provided.
-    ///
-    /// This is useful for creating source buffers, which can be used as `io::Read` sources.
-    ///
-    /// # Example
-    /// ```rust
-    /// # fn main() -> std::io::Result<()> { use bio::Buffer;
-    /// let mut src = Buffer::source([0u8, 1, 2]);
-    /// let mut dst = Buffer::new([0u8; 3]);
-    ///
-    /// dst.read(&mut src)?;
-    ///
-    /// assert_eq!(dst.to_inner(), [0, 1, 2]);
-    /// # Ok(()) }
-    /// ```
-    pub fn source<T>(store: D) -> Self
-    where
-        D: AsRef<[T]>,
-    {
-        Self {
-            position: 0,
-            limit: store.as_ref().len(),
-            store,
-        }
-    }
-
     /// Compact the buffer.
     ///
     /// Internally, this will move the available and free areas
@@ -149,21 +199,18 @@ impl<D> Buffer<D> {
     /// assert_eq!(buf.position(), 0);
     /// assert_eq!(buf.limit(), 2);
     /// # Ok(()) }
-    pub fn compact<T>(&mut self)
-    where
-        D: AsMut<[T]>,
-        T: Copy,
-    {
+    pub fn compact(&mut self) {
         let Self {
             position,
             limit,
             store,
+            compactor,
+            ..
         } = self;
 
-        let store = store.as_mut();
-
         let available = *position..*limit;
-        store.copy_within(available, 0);
+        compactor(store, available, 0);
+        //store.copy_within(available, 0);
 
         *limit -= *position;
         *position = 0;
@@ -257,7 +304,6 @@ impl<D> Buffer<D> {
     pub fn transfuse<T, S, K>(&mut self, source: &mut S, sink: &mut K) -> io::Result<usize>
     where
         D: AsRef<[T]> + AsMut<[T]>,
-        T: Copy,
         S: Source<T>,
         K: Sink<T>,
     {
@@ -265,49 +311,49 @@ impl<D> Buffer<D> {
     }
 }
 
-/// Return the backing storage as a slice.
-impl<D, T> AsRef<[T]> for Buffer<D>
-where
-    D: AsRef<[T]>,
-{
-    fn as_ref(&self) -> &[T] {
-        &self.store.as_ref()
-    }
-}
-
-/// Return the backing storage as a mutable slice.
-impl<D, T> AsMut<[T]> for Buffer<D>
-where
-    D: AsMut<[T]>,
-{
-    fn as_mut(&mut self) -> &mut [T] {
-        self.store.as_mut()
-    }
-}
-
-/// A Buffer can be also seen `io::Read`, reading from and reducing its available area.
-impl<D> io::Read for Buffer<D>
-where
-    D: AsRef<[u8]>,
-{
-    fn read(&mut self, mut buf: &mut [u8]) -> io::Result<usize> {
-        self.write(&mut buf)
-    }
-}
-
-/// A Buffer can be also seen `io::Write`, writing to and reducing its free area.
-impl<D> io::Write for Buffer<D>
-where
-    D: AsMut<[u8]>,
-{
-    fn write(&mut self, mut buf: &[u8]) -> io::Result<usize> {
-        self.read(&mut buf)
-    }
-
-    fn flush(&mut self) -> io::Result<()> {
-        Ok(())
-    }
-}
+///// Return the backing storage as a slice.
+//impl<D, T> AsRef<[T]> for Buffer<D>
+//where
+//    D: AsRef<[T]>,
+//{
+//    fn as_ref(&self) -> &[T] {
+//        &self.store.as_ref()
+//    }
+//}
+//
+///// Return the backing storage as a mutable slice.
+//impl<D, T> AsMut<[T]> for Buffer<D>
+//where
+//    D: AsMut<[T]>,
+//{
+//    fn as_mut(&mut self) -> &mut [T] {
+//        self.store.as_mut()
+//    }
+//}
+//
+///// A Buffer can be also seen `io::Read`, reading from and reducing its available area.
+//impl<D> io::Read for Buffer<D>
+//where
+//    D: AsRef<[u8]>,
+//{
+//    fn read(&mut self, mut buf: &mut [u8]) -> io::Result<usize> {
+//        self.write(&mut buf)
+//    }
+//}
+//
+///// A Buffer can be also seen `io::Write`, writing to and reducing its free area.
+//impl<D> io::Write for Buffer<D>
+//where
+//    D: AsMut<[u8]>,
+//{
+//    fn write(&mut self, mut buf: &[u8]) -> io::Result<usize> {
+//        self.read(&mut buf)
+//    }
+//
+//    fn flush(&mut self) -> io::Result<()> {
+//        Ok(())
+//    }
+//}
 
 fn transfuse<T, D, S, K>(
     total: usize,
@@ -317,7 +363,6 @@ fn transfuse<T, D, S, K>(
 ) -> io::Result<usize>
 where
     D: AsRef<[T]> + AsMut<[T]>,
-    T: Copy,
     S: Source<T>,
     K: Sink<T>,
 {
@@ -340,4 +385,17 @@ where
         // This SHOULD BE a tail-recursion.
         (_, n) => transfuse(total + n, buffer, source, sink),
     }
+}
+
+#[test]
+fn create_buffers() {
+    struct Fat;
+    Buffer::sink([0u8]);
+    Buffer::sink_move([Fat]);
+    Buffer::source([0u8]);
+    Buffer::source_move([Fat]);
+    Buffer::sink(&mut [0u8]);
+    Buffer::sink_move(&mut [Fat]);
+    Buffer::source(&[0u8]);
+    //Buffer::source_move(&[Fat]);
 }

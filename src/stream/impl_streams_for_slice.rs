@@ -1,6 +1,13 @@
-use super::{Sink, Source};
-use std::cmp::min;
-use std::mem;
+use {
+    super::{
+        Sink,
+        Source,
+    },
+    std::{
+        cmp::min,
+        mem,
+    },
+};
 
 fn sink_into_slice<T: Copy>(source: &[T], sink: &mut [T]) -> usize {
     let n = min(source.len(), sink.len());
