@@ -2,6 +2,7 @@
 
 mod buffer3;
 pub use buffer3::{
+    flow,
     stream,
     Buffer,
     CompactStrategy,

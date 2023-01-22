@@ -4,7 +4,7 @@ impl<D, T, C, P> Buffer<D, T, C, P> {
     fn new(data: D) -> Self {
         Self {
             data,
-            span: 0..0,
+            span: (0, 0),
             _item_evidence: PhantomData,
             _copy_strategy: PhantomData,
             _compact_strategy: PhantomData,
@@ -12,7 +12,10 @@ impl<D, T, C, P> Buffer<D, T, C, P> {
     }
 
     pub fn available(&self) -> usize {
-        self.span.len()
+        let &Self {
+            span: (start, end), ..
+        } = self;
+        end - start
     }
 
     pub fn is_empty(&self) -> bool {
@@ -20,7 +23,7 @@ impl<D, T, C, P> Buffer<D, T, C, P> {
     }
 
     pub fn clear(&mut self) {
-        self.span = 0..0;
+        self.span = (0, 0);
     }
 }
 
@@ -47,22 +50,26 @@ where
     D: AsRef<[T]>,
 {
     pub fn as_source(mut self) -> Self {
-        self.span = 0..self.data.as_ref().len();
+        self.span = (0, self.data.as_ref().len());
         self
     }
     pub fn as_read(&self) -> &[T] {
-        let Self { data, span, .. } = self;
-        &data.as_ref()[span.clone()]
+        let Self {
+            data,
+            span: (start, end),
+            ..
+        } = self;
+        &data.as_ref()[*start..*end]
     }
     pub fn write(&mut self, mut into: impl Sink<T>) -> IO {
-        into.sink(self.as_read()).tap_ok(|n| self.span.start += n)
+        into.sink(self.as_read()).tap_ok(|n| self.span.0 += n)
     }
 
     pub fn len(&self) -> usize {
         self.data.as_ref().len()
     }
     pub fn free(&self) -> usize {
-        self.len() - self.span.end
+        self.len() - self.span.1
     }
     pub fn is_full(&self) -> bool {
         self.free() == 0
@@ -76,13 +83,13 @@ where
     pub fn as_write(&mut self) -> &mut [T] {
         let Self {
             data,
-            span: Range { end, .. },
+            span: (_, end),
             ..
         } = self;
         &mut data.as_mut()[*end..]
     }
     pub fn read(&mut self, mut from: impl Source<T>) -> IO {
-        from.source(self.as_write()).tap_ok(|n| self.span.end += n)
+        from.source(self.as_write()).tap_ok(|n| self.span.1 += n)
     }
 }
 
@@ -102,7 +109,7 @@ where
 {
     pub fn copy_into(&mut self, into: &mut [T]) -> IO {
         let n = Self::copy_slice(into, self.as_read());
-        self.span.start += n;
+        self.span.0 += n;
         Ok(n)
     }
 }
@@ -113,7 +120,7 @@ where
 {
     pub fn copy_from(&mut self, from: &[T]) -> IO {
         let n = Self::copy_slice(self.as_write(), from);
-        self.span.end += n;
+        self.span.1 += n;
         Ok(n)
     }
 }
@@ -124,7 +131,7 @@ where
 {
     pub fn compact(&mut self) {
         let Self {
-            span: Range { start, end },
+            span: (start, end),
             data,
             ..
         } = self;

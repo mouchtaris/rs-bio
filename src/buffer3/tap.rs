@@ -8,6 +8,10 @@ pub trait Tap: Sized {
         self
     }
 
+    fn tap_map<U>(self, map: impl FnOnce(Self) -> U) -> U {
+        map(self)
+    }
+
     fn tap_ok<T, E>(self, block: impl FnOnce(&T)) -> Self
     where
         Self: Borrow<Result<T, E>>,

@@ -12,6 +12,7 @@ mod copy_strategy;
 #[cfg(test)]
 mod test;
 
+pub mod flow;
 pub mod stream;
 pub mod tap;
 
@@ -19,6 +20,11 @@ pub type IO<T = usize> = io::Result<T>;
 
 pub trait Source<T> {
     fn source(&mut self, into: &mut [T]) -> IO;
+}
+
+pub trait Flow<T, U> {
+    type Source: Source<U>;
+    fn flow(&mut self, inp: impl Source<T>) -> Self::Source;
 }
 
 pub trait Sink<T> {
@@ -33,13 +39,17 @@ pub trait CompactStrategy<T> {
     fn compact_within(slice: &mut [T], area: Range<usize>);
 }
 
+#[derive(Default, Clone, Copy, PartialEq, PartialOrd, Eq, Ord, Debug)]
 pub struct SCopy;
+#[derive(Default, Clone, Copy, PartialEq, PartialOrd, Eq, Ord, Debug)]
 pub struct SClone;
+#[derive(Default, Clone, Copy, PartialEq, PartialOrd, Eq, Ord, Debug)]
 pub struct SNone;
 
+#[derive(Default, Copy, Eq, Ord, PartialEq, PartialOrd, Clone, Debug)]
 pub struct Buffer<D, T, C, P> {
     data: D,
-    span: Range<usize>,
+    span: (usize, usize),
     _item_evidence: PhantomData<T>,
     _copy_strategy: PhantomData<C>,
     _compact_strategy: PhantomData<P>,

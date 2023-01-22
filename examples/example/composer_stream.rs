@@ -1,5 +1,3 @@
-fn main() {}
-
 #[cfg(test)]
 use bio::*;
 
@@ -107,11 +105,11 @@ fn example() -> IO<()> {
     // This is an interesting application of buffers and streams, and shows how we can
     // approach streams a-la Akka.
     //
-    // The implementation of the flow() function reveals patterns that can be added
-    // as an extension to this crate. This work is left for the future.
+    // This implementation is a modification of the flow::EachConsecutive of this
+    // library.
     //
     // This is just one use case of Buffers and Streams. Check out the rest of the
-    // examples for other ideas and different applications.
+    // example for other ideas and different applications.
 
     Ok(())
 }
