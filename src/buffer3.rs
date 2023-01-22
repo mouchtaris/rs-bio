@@ -16,11 +16,24 @@ pub mod flow;
 pub mod stream;
 pub mod tap;
 
-pub type IO<T = usize> = io::Result<T>;
-
-pub trait Source<T> {
-    fn source(&mut self, into: &mut [T]) -> IO;
+macro_rules! ddoc {
+    ($id:literal, $it:item) => {
+        #[doc = include_str!(concat!("../doc/", concat!($id, ".md")))]
+        /// ```rust
+        #[doc = include_str!(concat!("../examples/example/", concat!($id, ".rs")))]
+        /// ```
+        $it
+    };
 }
+
+ddoc!("type.IO", pub type IO<T = usize> = io::Result<T>;);
+
+ddoc!(
+    "type.Source",
+    pub trait Source<T> {
+        fn source(&mut self, into: &mut [T]) -> IO;
+    }
+);
 
 pub trait Flow<T, U> {
     type Source: Source<U>;

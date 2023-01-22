@@ -16,7 +16,7 @@ fn example() -> IO<()> {
     // Define the window buffer to use in EachConsecutive
     let window = Buffer::from_copy([0u8; 3]);
 
-    // Create a sink from a buffer, to inspect the resulting element.
+    // Create a sink from a buffer, to inspect the resulting elements.
     let mut sink = Buffer::from_copy([window; 3]);
     // Finally, create an each-consecutive source, wrapping the original source
     // and buffering items in "window".

@@ -22,7 +22,7 @@ fn example() -> IO<()> {
 
         // Create a new source stream from a closure:
         stream::Delegate(move |dest: &mut [u32]| -> IO {
-            // The total number of items we places into "dest",
+            // The total number of items we placed into "dest",
             // which we must also return.
             let mut target = 0;
 
