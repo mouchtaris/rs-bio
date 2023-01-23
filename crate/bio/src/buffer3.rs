@@ -19,6 +19,8 @@ pub mod tap;
 macro_rules! ddoc {
     ($id:literal, $it:item) => {
         #[doc = include_str!(concat!("../doc/", concat!($id, ".md")))]
+        ///
+        /// # Example
         /// ```rust
         #[doc = include_str!(concat!("../examples/example/", concat!($id, ".rs")))]
         /// ```
@@ -36,8 +38,8 @@ ddoc!(
 );
 
 pub trait Flow<T, U> {
-    type Source: Source<U>;
-    fn flow(&mut self, inp: impl Source<T>) -> Self::Source;
+    type Source<S: Source<T>>: Source<U>;
+    fn flow<S: Source<T>>(&self, inp: S) -> Self::Source<S>;
 }
 
 pub trait Sink<T> {

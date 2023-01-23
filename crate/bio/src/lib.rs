@@ -7,6 +7,7 @@ pub use buffer3::{
     Buffer,
     CompactStrategy,
     CopyStrategy,
+    Flow,
     SClone,
     SCopy,
     SNone,

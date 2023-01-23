@@ -9,23 +9,23 @@ fn example() -> IO<()> {
 
     // It gets constructed with a source Source and a Buffer.
     // The buffer dictates how many items of the old source each consecutive item
-    // of the new source will contain but its len().
+    // of the new source will contain by its len().
 
-    // Create a source from an io::Read.
+    // Create a source from an io::Read:
     let source = stream::Read([1, 2, 3, 4, 5u8].as_ref());
     // Define the window buffer to use in EachConsecutive
     let window = Buffer::from_copy([0u8; 3]);
 
-    // Create a sink from a buffer, to inspect the resulting elements.
+    // Create a sink from a buffer, to inspect the resulting elements:
     let mut sink = Buffer::from_copy([window; 3]);
     // Finally, create an each-consecutive source, wrapping the original source
-    // and buffering items in "window".
+    // and buffering items in "window":
     let mut source = flow::EachConsecutive::new(source, window);
 
-    // Read as many items as source can give or sink can take.
+    // Read as many items as source can give or sink can take:
     let read = sink.read(&mut source)?;
 
-    // This will be 2 items, because after that the source gets depleted.
+    // This will be 2 items, because after that the source gets depleted:
     assert_eq!(read, 2);
 
     // The first item is a buffer with the first three elements of source:

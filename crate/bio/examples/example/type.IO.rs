@@ -1,3 +1,4 @@
+#[cfg(test)]
 use bio::IO;
 
 #[test]

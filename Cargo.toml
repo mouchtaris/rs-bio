@@ -1,9 +1,10 @@
-[package]
-name = "bio"
-version = "0.1.0"
-edition = "2021"
-authors = [
-    "Nikos Mouchtris <mouchtaris@gmail.com>"
+[workspace]
+members = [
+    "crate/bio",
+    "crate/dev-tool",
+    "crate/uci",
+    "crate/bio-http"
 ]
 
-[dependencies]
+[patch.crates-io.bio]
+path = "./crate/bio"

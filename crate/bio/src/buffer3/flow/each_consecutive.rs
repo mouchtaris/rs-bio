@@ -6,9 +6,21 @@ impl<S, D, T, C, P> EachConsecutive<S, D, T, C, P> {
     }
 }
 
+impl<D, T, C, P> Flow<T, Buffer<D, T, C, P>> for EachConsecutiveFlow<D, T, C, P>
+where
+    Buffer<D, T, C, P>: Clone,
+    D: AsRef<[T]> + AsMut<[T]>,
+{
+    type Source<S: Source<T>> = EachConsecutive<S, D, T, C, P>;
+
+    fn flow<S: Source<T>>(&self, inp: S) -> Self::Source<S> {
+        EachConsecutive::new(inp, self.0.clone())
+    }
+}
+
 impl<S, D, T, C, P> Source<Buffer<D, T, C, P>> for EachConsecutive<S, D, T, C, P>
 where
-    super::super::Buffer<D, T, C, P>: Clone,
+    Buffer<D, T, C, P>: Clone,
     D: AsRef<[T]> + AsMut<[T]>,
     S: Source<T>,
 {

@@ -1,0 +1,32 @@
+[package]
+name = "dev-tool"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+axum = "*"
+axum-server = "*"
+axum-macros = "*"
+hyper = { version = "*", features = ["full"] }
+tokio = { version = "*", features = ["full"] }
+tower = "*"
+tower-http = { version = "*", features = ["full"] }
+bio = "*"
+anyhow = "*"
+
+# [dependencies.axum-extra]
+# version = "*"
+# features = [
+#     "async-read-body",
+#     "cookie",
+#     "cookie-private",
+#     "cookie-signed",
+#     "cookie-key-expansion",
+#     "erased-json",
+#     "form",
+#     "json-lines",
+#     "protobuf",
+#     "query",
+#     "spa",
+#     "typed-routing"
+# ]
